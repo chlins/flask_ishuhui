@@ -3,6 +3,7 @@ import json
 
 import requests
 from flask import current_app
+from sqlalchemy import and_
 
 import ishuhui.data as data
 from ishuhui.extensions.flasksqlalchemy import db
@@ -56,20 +57,25 @@ def refresh_comics():
 
 
 def load_chapters(page, comic_id):
-    response = requests.get(
-        "http://www.ishuhui.net/ComicBooks/GetChapterList",
-        params={"PageIndex": page,
-                "id": comic_id})
+    response = requests.get("http://www.ishuhui.net/ComicBooks/GetChapterList",
+                            params={"PageIndex": page, "id": comic_id})
     return response.json()['Return']['List']
 
 
-def refresh_chapters():
+def refresh_chapters(listener=None):
     comics = data.get_comics()
-    result = {}
+    results = []
+    total = len(comics)
+    current = 0
     for comic in comics:
         comic_id, saved_chapter_num = refresh_chapter(comic.id)
-        result[comic_id] = saved_chapter_num
-    return result
+        current += 1
+        result = {'comic_id': comic_id, 'count': saved_chapter_num}
+        results.append(result)
+        if listener is not None:
+            listener(current, total, result)
+
+    return results
 
 
 def refresh_comic_images():
@@ -103,8 +109,15 @@ def refresh_chapter(comic_id):
     while len(chapters) > 0:
         for chapter in chapters:
             try:
-                if Chapter.query.get(chapter['Id']):
-                    current_app.logger.info('Chapter {} already existed'.format(chapter['Id']))
+                database_chapter = Chapter.query.get(chapter['Id'])
+                if database_chapter:
+                    same_chapter_number_chapters = Chapter.query.filter(
+                        and_(Chapter.comic_id == database_chapter.comic_id,
+                             Chapter.chapter_number == database_chapter.chapter_number)).all()
+                    for same_chapter_number_chapter in same_chapter_number_chapters:
+                        if same_chapter_number_chapter.id != database_chapter.id:
+                            # delete duplicate chapters
+                            db.session.delete(same_chapter_number_chapter)
                     continue
                 new_chapter = Chapter()
                 new_chapter.id = chapter['Id']

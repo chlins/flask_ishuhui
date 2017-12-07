@@ -1,5 +1,5 @@
-import lxml.html
-from flask import render_template, Blueprint, json, abort
+import re, requests
+from flask import render_template, Blueprint, json, abort, redirect, request, jsonify, url_for, flash
 
 import ishuhui.data as data
 from ishuhui.extensions.flasksqlalchemy import db
@@ -15,7 +15,8 @@ def latest_chapters():
 
 @bp_comic.route('/comics')
 def comics():
-    comics = data.get_comics()
+    classify_id = request.args.get('classify_id')
+    comics = data.get_comics(classify_id)
     return render_template('comics.html', comics=comics)
 
 
@@ -26,21 +27,24 @@ def chapters(comic_id):
     return render_template('chapters.html', comic=comic, chapters=chapters)
 
 
+image_pattern = re.compile(r'<img [^>]*src="([^"]+)')
+
+
 def get_images_from_url(url):
-    tree = lxml.html.parse(url)
-    images = tree.xpath("//img/@src")
+    html = requests.get(url).text
+    images = image_pattern.findall(html)
     return images
 
 
 @bp_comic.route('/refresh_chapters/<int:chapter_id>', methods=['GET'])
 def refresh_chapter(chapter_id):
     chapter = data.get_chapter(chapter_id)
-    url = 'http://www.ishuhui.net/ComicBooks/ReadComicBooksToIsoV1/' + str(
-        chapter_id) + '.html'
+    url = 'http://www.ishuhui.net/ComicBooks/ReadComicBooksToIsoV1/' + str(chapter_id) + '.html'
     images = get_images_from_url(url)
     chapter.images = json.dumps(images)
     db.session.commit()
-    return json.dumps(images)
+    flash('Refresh succeed!', 'success')
+    return redirect(url_for('comic.chapter', comic_id=chapter.comic().id, chapter_id=chapter.id))
 
 
 @bp_comic.route('/comics/<int:comic_id>/chapters/<int:chapter_id>')
@@ -60,5 +64,10 @@ def chapter(comic_id, chapter_id):
         chapter.images = json.dumps(images)
         db.session.commit()
     return render_template(
-        'images.html', comic=comic, chapter=chapter, next_chapter=next_chapter, prev_chapter=prev_chapter,
-        images=images, url=url)
+        'images.html',
+        comic=comic,
+        chapter=chapter,
+        next_chapter=next_chapter,
+        prev_chapter=prev_chapter,
+        images=images,
+        url=url)

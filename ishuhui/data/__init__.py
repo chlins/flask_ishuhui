@@ -3,12 +3,21 @@ from ishuhui.models.comic import Comic
 from sqlalchemy import and_
 
 
-def get_comics():
-    return Comic.query.all()
+def get_comics(classify_id=None):
+    if classify_id is None:
+        return Comic.query.all()
+    else:
+        return Comic.query.filter_by(classify_id=classify_id).all()
 
 
 def get_comic(comic_id):
     return Comic.query.get(comic_id)
+
+
+def count_chapters(comic_id=None):
+    if comic_id is None:
+        return Chapter.query.count()
+    return Chapter.query.filter_by(comic_id=comic_id).count()
 
 
 def get_chapters(comic_id=None):
